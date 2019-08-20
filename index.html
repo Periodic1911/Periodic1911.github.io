@@ -1,31 +1,187 @@
-<DOCTYPE htlm>
+<meta charset="UTF-8">
+<DOCTYPE=html>
 <html>
 <body>
+<h2>Breathing Helper</h2>
+<div class=slidercontainer>
+	Breaths per minute: 
+	<input type="range" min=5 max=20 value=10 step=1 class="slider" id=slideBpm>
+	<label id=labelBpm></label>
+	<br>
 
-<h2> Cijfer vergelijker </h2>
-<p> Typ je cijfer in en zie hoeveel er hoger hebben! </p>
-<input type="text" id="input">
-<button onclick="calculate()"> Reken los! </button>
-<p id=output></p>
+	Breath in to breath out ratio: 
+	<input type="range" min=0.1 max=0.9 value=0.5 step=0.01 class="slider" id=slideRatio>
+	<label id=labelRatio></label>
+	<br>
+	
+	Excercise countdown timer: 
+	<input type="range" min=10 max=60 value=20 step=1 class="slider" id=slideTime>
+	<label id=labelTime></label>
+	<button id=buttonTimerStart>Start</button>
+	<br>
+</div>
+<canvas id=canvas1></canvas>
+</body>
 
 <script>
-var cijfers = [
-5  ,7.5,8.5,5  ,6  ,5  ,8  ,8.5,7.5,6.5,4  ,6  ,7  ,4.5,5  ,4.5,7  ,5  ,7  ,7.5,6  ,4  ,5  ,5.5,6  ,6.5,7.5,7  ,6  ,6  ,9.5,5.5,8.5,6.5,6  ,6  ,6.5,3  ,5.5,6.5,6.5,4  ,5.5,3.5,7  ,6.5,8  ,7  ,7.5,6  ,6.5,5.5,8  ,6  ,9.5,6.5,9  ,8.5,8  ,5.5,6.5,8  ,6  ,3  ,7.5,6.5,6  ,7  ,6.5,6.5,6  ,6.5,6  ,5  ,7  ,4  ,7.5,9  ,5.5,7  ,7.5,7  ,8  ,6  ,6.5,7.5,
-];
-	function calculate() {
-	mijncijfer=parseFloat(document.getElementById('input').value);
-	total=cijfers.length;
-	more=0;
-
-	for(i=0; i < total; i++) {
-		if(cijfers[i] > mijncijfer) more++;
-	}
-	
-	percentage = more/total*100;
-
-	document.getElementById('output').innerHTML = percentage.toFixed() + "% (" + more + " van de " + total + ") heeft hoger.";
+var time;
+var interval
+var btnStart = document.getElementById('buttonTimerStart');
+var slider = document.getElementById('slideTime');
+var label = document.getElementById('labelTime');
+btnStart.onclick = function() {
+	if(interval) clearInterval(interval);
+	time = parseFloat(slider.value);
+	interval = window.setInterval(tick,1000);
+	label.innerHTML = time;
 }
+
+slider.oninput = function() {
+	label.innerHTML = slider.value;
+}
+
+function tick() {
+	time--;
+	label.innerHTML = time;
+	if(time <= 0) {
+		clearInterval(interval);
+	}
+}
+
 </script>
 
-</body>
+<script>
+const N = 500; // amount of sample points in the graph
+const overSamp = 5; // amount of samples to skip during drawing
+const graphScale = 0.6 // normalized amplitude of the graph
+const ballSize = 0.04 // normalized size of the ball
+var fps = 60; // animation frames per second
+var canvas = document.getElementById('canvas1');
+var slideBpm = document.getElementById('slideBpm');
+var slideRatio = document.getElementById('slideRatio');
+var slideTime = document.getElementById('slideTime');
+var vin = 60/parseFloat(slideBpm.value) * parseFloat(slideRatio.value);
+var vout = 60/parseFloat(slideBpm.value) * (1-parseFloat(slideRatio.value));
+var ctx = canvas.getContext("2d");
+var graph = [];
+var graphTimeout;
+var graphOrigin = 0;
+
+// get sample points from parameters (in hold out)
+// pos is float range 0 to 1 of normalized position along the graph (x)
+// return val is float range 0 to 1 of normalized output (y)
+function iho(pos) {
+	var total = vin + vout;
+	if(total*pos < vin) {
+		return (Math.cos(pos*total/vin*Math.PI)+1)/2*graphScale+(1-graphScale)/2;
+	}
+	return (Math.cos((1-(pos*total-vin)/vout)*Math.PI)+1)/2*graphScale+(1-graphScale)/2;
+}
+
+// (re)make the graph
+function makeGraph() {
+	graph.length = 0;
+	for(var i = 0; i < 1; i+=1/N) {
+		graph.push(iho(i));
+	}
+}
+makeGraph();
+
+// remake and update labels on Bpm and Ratio slider update
+slideBpm.oninput = slideRatio.oninput = function(){
+	document.getElementById("labelBpm").innerHTML = slideBpm.value;
+	document.getElementById("labelRatio").innerHTML = slideRatio.value;
+	vin = 60/parseFloat(slideBpm.value) * parseFloat(slideRatio.value);
+	vout = 60/parseFloat(slideBpm.value) * (1-parseFloat(slideRatio.value));
+	makeGraph(); timeoutGraph(); drawCanvas()
+};
+// update labels on init
+document.getElementById("labelBpm").innerHTML = slideBpm.value;
+document.getElementById("labelRatio").innerHTML = slideRatio.value;
+
+// 'rol' graph, called on a variable timeout
+function rolGraph() {
+	graphOrigin = (graphOrigin + 1) % N;
+}
+
+function timeoutGraph() {
+	var total = vin + vout;
+	clearInterval(graphTimeout);
+	graphTimeout = window.setInterval(rolGraph, 1000*total/N);
+}
+timeoutGraph();
+
+function drawCanvas() {
+	// clear
+	ctx.clearRect(0,0,canvas.width,canvas.height);
+
+	// draw graph
+	ctx.strokeStyle = '#FF0000';
+	ctx.beginPath();
+	ctx.moveTo(0,graph[graphOrigin]*canvas.height);
+	for(var i = 1; i < N; i+=overSamp) {
+		ctx.lineTo(i/N*canvas.width,graph[(i+graphOrigin)%N]*canvas.height);
+	}
+	ctx.stroke();
+
+	//draw ball
+	ctx.beginPath()
+	ctx.fillStyle = '#0000FF';
+	ctx.arc(canvas.width/2,graph[(N/2+graphOrigin)%N]*canvas.height,canvas.width*ballSize,0,Math.PI*2);
+	ctx.fill();
+	//window.requestAnimationFrame(drawCanvas); // slows down incrementally
+}
+window.setInterval(drawCanvas, 1000/fps);
+
+function resizeCanvas() {
+	canvas.width = window.innerWidth * 0.8;
+	canvas.height = Math.min(window.innerHeight * 0.8, canvas.width * 3/4);
+
+	// redraw to fit size
+	drawCanvas();
+}
+// resize at window init
+resizeCanvas();
+//dynamic resize
+//window.addEventListener('resize', resizeCanvas, false); //option 1, heavy load
+window.setInterval(resizeCanvas, 100); // option 2, light load
+</script>
+
+<style>
+/* The slider itself */
+.slider {
+  -webkit-appearance: none;  /* Override default CSS styles */
+  appearance: none;
+  width: 50%; /* Specified width */
+  height: 25px; /* Specified height */
+  background: #d3d3d3; /* Grey background */
+  outline: none; /* Remove outline */
+  opacity: 0.7; /* Set transparency (for mouse-over effects on hover) */
+  -webkit-transition: .2s; /* 0.2 seconds transition on hover */
+  transition: opacity .2s;
+}
+
+/* Mouse-over effects */
+.slider:hover {
+  opacity: 1; /* Fully shown on mouse-over */
+}
+
+/* The slider handle (use -webkit- (Chrome, Opera, Safari, Edge) and -moz- (Firefox) to override default look) */
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none; /* Override default look */
+  appearance: none;
+  width: 25px; /* Set a specific slider handle width */
+  height: 25px; /* Slider handle height */
+  background: #4CAF50; /* Green background */
+  cursor: pointer; /* Cursor on hover */
+}
+
+.slider::-moz-range-thumb {
+  width: 25px; /* Set a specific slider handle width */
+  height: 25px; /* Slider handle height */
+  background: #4CAF50; /* Green background */
+  cursor: pointer; /* Cursor on hover */
+}
+</style>
+
 </html>

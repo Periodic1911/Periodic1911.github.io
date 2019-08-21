@@ -134,7 +134,7 @@ function drawCanvas() {
 window.setInterval(drawCanvas, 1000/fps);
 
 function resizeCanvas() {
-	canvas.width = window.innerWidth * 0.8;
+	canvas.width = window.innerWidth;
 	canvas.height = Math.min(window.innerHeight * 0.8, canvas.width * 3/4);
 
 	// redraw to fit size
